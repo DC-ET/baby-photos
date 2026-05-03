@@ -26,7 +26,6 @@
 - `domain/album/`：移动照片到 `Pictures/BabyAlbum` 并刷新 MediaStore。
 - `ui/`：Compose 页面、组件、主题、导航。
 - `worker/`：WorkManager 后台扫描任务。
-- `ORIGIN.md`：原始产品与技术方案，修改核心流程前先阅读。
 
 不要手动编辑 `app/build/`、`build/` 或 KSP 生成文件。
 
@@ -92,7 +91,6 @@
 
 ## 开发原则
 
-- 先阅读 `ORIGIN.md` 和相关模块，再修改核心流程。
 - 保持改动小而聚焦，优先延续现有 Kotlin/Compose 风格。
 - 不要引入新依赖，除非现有 AndroidX、Room、WorkManager、OkHttp/Moshi/Coil 无法合理完成需求。
 - 对照片移动、权限、API 调用、数据库迁移、后台任务等高风险改动，完成后至少运行相关 Gradle 命令或说明无法验证的原因。
