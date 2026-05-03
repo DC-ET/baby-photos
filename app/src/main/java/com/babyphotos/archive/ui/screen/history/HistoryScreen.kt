@@ -56,6 +56,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
 import com.babyphotos.archive.domain.model.ClassificationAction
+import com.babyphotos.archive.domain.model.MediaType
 import com.babyphotos.archive.ui.component.ConfirmDialog
 import com.babyphotos.archive.ui.component.ConfidenceBadge
 import com.babyphotos.archive.util.PhotoPermissionUtils
@@ -104,7 +105,7 @@ fun HistoryScreen(
     if (uiState.showMovePermissionDialog) {
         ConfirmDialog(
             title = "需要文件管理权限",
-            message = "移动到宝宝相册需要移动照片。请在系统设置中允许“管理所有文件”，授权后返回本页再点击移动。",
+            message = "移动到宝宝相册需要移动照片或视频。请在系统设置中允许“管理所有文件”，授权后返回本页再点击移动。",
             confirmLabel = "去设置",
             onConfirm = {
                 viewModel.dismissMovePermissionDialog()
@@ -213,6 +214,11 @@ private fun HistoryItem(
             val imagePath = entity.movedTo ?: entity.path
             val imageFile = File(imagePath)
             val context = LocalContext.current
+            val placeholder = if (entity.isVideo()) {
+                painterResource(android.R.drawable.ic_media_play)
+            } else {
+                painterResource(android.R.drawable.ic_menu_gallery)
+            }
 
             AsyncImage(
                 model = ImageRequest.Builder(context)
@@ -225,8 +231,8 @@ private fun HistoryItem(
                     .size(56.dp)
                     .clip(RoundedCornerShape(8.dp)),
                 contentScale = ContentScale.Crop,
-                placeholder = painterResource(android.R.drawable.ic_menu_gallery),
-                error = painterResource(android.R.drawable.ic_menu_gallery)
+                placeholder = placeholder,
+                error = placeholder
             )
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -283,6 +289,11 @@ private fun HistoryDetailDialog(
     val context = LocalContext.current
     val imagePath = entity.movedTo ?: entity.path
     val imageFile = File(imagePath)
+    val placeholder = if (entity.isVideo()) {
+        painterResource(android.R.drawable.ic_media_play)
+    } else {
+        painterResource(android.R.drawable.ic_menu_gallery)
+    }
     val analyzedAt = remember(entity.timestamp) {
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(entity.timestamp))
     }
@@ -311,19 +322,20 @@ private fun HistoryDetailDialog(
                         .data(imageFile)
                         .crossfade(true)
                         .build(),
-                    contentDescription = "历史照片大图",
+                    contentDescription = if (entity.isVideo()) "历史视频预览" else "历史照片大图",
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 220.dp, max = 360.dp)
                         .clip(RoundedCornerShape(14.dp)),
                     contentScale = ContentScale.Fit,
-                    placeholder = painterResource(android.R.drawable.ic_menu_gallery),
-                    error = painterResource(android.R.drawable.ic_menu_gallery)
+                    placeholder = placeholder,
+                    error = placeholder
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 DetailRow(label = "状态", value = entity.actionLabel())
+                DetailRow(label = "类型", value = if (entity.isVideo()) "视频" else "照片")
                 DetailRow(label = "是否包含宝宝", value = if (entity.containsBaby) "是" else "否")
                 DetailRow(label = "置信度", value = "${entity.confidence}%")
                 DetailRow(label = "分析时间", value = analyzedAt)
@@ -384,3 +396,5 @@ private fun ImageAnalysisEntity.actionLabel(): String {
         else -> action
     }
 }
+
+private fun ImageAnalysisEntity.isVideo(): Boolean = mediaType == MediaType.VIDEO.name

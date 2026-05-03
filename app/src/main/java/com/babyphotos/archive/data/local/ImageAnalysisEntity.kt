@@ -20,6 +20,12 @@ data class ImageAnalysisEntity(
     @ColumnInfo(name = "media_store_id")
     val mediaStoreId: Long? = null,
 
+    @ColumnInfo(name = "media_type")
+    val mediaType: String = "IMAGE",
+
+    @ColumnInfo(name = "mime_type")
+    val mimeType: String = "image/jpeg",
+
     @ColumnInfo(name = "contains_baby")
     val containsBaby: Boolean,
 

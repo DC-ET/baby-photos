@@ -40,28 +40,12 @@ class ImagePreprocessor(
                 )
             }
 
-            // Step 4: Fine-scale to exact target size
-            val scaledBitmap = scaleBitmap(sampledBitmap, maxSize)
-            if (sampledBitmap !== scaledBitmap) {
-                sampledBitmap.recycle()
-            }
+            compressBitmap(originalPath, sampledBitmap)
+        }
 
-            // Step 5: Compress to JPEG
-            val outputStream = ByteArrayOutputStream()
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality, outputStream)
-            scaledBitmap.recycle()
-
-            val byteArray = outputStream.toByteArray()
-
-            // Step 6: Base64 encode with data URI prefix
-            val base64Str = Base64.encodeToString(byteArray, Base64.NO_WRAP)
-            val dataUri = "data:image/jpeg;base64,$base64Str"
-
-            PreprocessedImage(
-                originalPath = originalPath,
-                base64Data = dataUri,
-                compressedSize = byteArray.size
-            )
+    suspend fun preprocessBitmap(originalPath: String, bitmap: Bitmap): PreprocessedImage =
+        withContext(Dispatchers.Default) {
+            compressBitmap(originalPath, bitmap)
         }
 
     private fun calculateInSampleSize(
@@ -91,5 +75,26 @@ class ImagePreprocessor(
         val newHeight = (height * scale).toInt()
 
         return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    }
+
+    private fun compressBitmap(originalPath: String, bitmap: Bitmap): PreprocessedImage {
+        val scaledBitmap = scaleBitmap(bitmap, maxSize)
+        if (bitmap !== scaledBitmap) {
+            bitmap.recycle()
+        }
+
+        val outputStream = ByteArrayOutputStream()
+        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality, outputStream)
+        scaledBitmap.recycle()
+
+        val byteArray = outputStream.toByteArray()
+        val base64Str = Base64.encodeToString(byteArray, Base64.NO_WRAP)
+        val dataUri = "data:image/jpeg;base64,$base64Str"
+
+        return PreprocessedImage(
+            originalPath = originalPath,
+            base64Data = dataUri,
+            compressedSize = byteArray.size
+        )
     }
 }

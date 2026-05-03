@@ -74,7 +74,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                 movingItemIds = _uiState.value.movingItemIds - entity.id,
                 userMessage = result.fold(
                     onSuccess = { "已移动到宝宝相册" },
-                    onFailure = { "移动失败：${it.message ?: "无法移动照片"}" }
+                    onFailure = { "移动失败：${it.message ?: "无法移动照片或视频"}" }
                 )
             )
         }
@@ -101,7 +101,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
 
         _uiState.value = _uiState.value.copy(
             showMovePermissionDialog = true,
-            userMessage = "需要授予文件管理权限后才能移动照片"
+            userMessage = "需要授予文件管理权限后才能移动照片或视频"
         )
         return false
     }

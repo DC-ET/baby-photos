@@ -3,10 +3,6 @@ package com.babyphotos.archive.ui.screen.home
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.Constraints
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.babyphotos.archive.BabyPhotosApp
 import com.babyphotos.archive.data.local.AppDatabase
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
@@ -14,7 +10,6 @@ import com.babyphotos.archive.domain.model.ClassificationAction
 import com.babyphotos.archive.domain.model.ScanSummary
 import com.babyphotos.archive.util.PhotoPermissionUtils
 import com.babyphotos.archive.util.SettingsManager
-import com.babyphotos.archive.worker.DailyScanWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +25,7 @@ data class HomeUiState(
     val babyPhotoCount: Int = 0,
     val pendingItems: List<ImageAnalysisEntity> = emptyList(),
     val showMovePermissionDialog: Boolean = false,
+    val showScanStartDateDialog: Boolean = false,
     val userMessage: String? = null
 )
 
@@ -78,6 +74,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun requestStartScan() {
+        if (_uiState.value.isScanning) return
+
+        if (settingsManager.scanStartDate <= 0L) {
+            _uiState.value = _uiState.value.copy(showScanStartDateDialog = true)
+            return
+        }
+
+        startScan()
+    }
+
+    fun confirmScanStartDate(epochSeconds: Long) {
+        settingsManager.scanStartDate = epochSeconds
+        _uiState.value = _uiState.value.copy(showScanStartDateDialog = false)
+        startScan()
+    }
+
+    fun dismissScanStartDateDialog() {
+        _uiState.value = _uiState.value.copy(showScanStartDateDialog = false)
+    }
+
     fun startScan() {
         if (_uiState.value.isScanning) return
 
@@ -108,7 +125,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 isConfirming = false,
                 userMessage = result.fold(
                     onSuccess = { "已添加到宝宝相册" },
-                    onFailure = { "添加失败：${it.message ?: "无法移动照片"}" }
+                    onFailure = { "添加失败：${it.message ?: "无法移动照片或视频"}" }
                 )
             )
         }
@@ -141,7 +158,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 userMessage = if (failures == 0) {
                     "已全部添加到宝宝相册"
                 } else {
-                    "有 $failures 张照片添加失败，请稍后重试"
+                    "有 $failures 个文件添加失败，请稍后重试"
                 }
             )
         }
@@ -161,18 +178,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearUserMessage() {
         _uiState.value = _uiState.value.copy(userMessage = null)
-    }
-
-    fun startManualWorkManagerScan() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val scanRequest = OneTimeWorkRequestBuilder<DailyScanWorker>()
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(getApplication()).enqueue(scanRequest)
     }
 
     private fun loadBabyPhotoCount() {
@@ -201,7 +206,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(
             hasMovePermission = false,
             showMovePermissionDialog = true,
-            userMessage = "需要授予文件管理权限后才能移动照片"
+            userMessage = "需要授予文件管理权限后才能移动照片或视频"
         )
         return false
     }

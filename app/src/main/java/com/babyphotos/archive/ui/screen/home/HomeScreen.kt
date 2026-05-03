@@ -28,11 +28,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,10 +56,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
+import com.babyphotos.archive.domain.model.MediaType
 import com.babyphotos.archive.ui.component.ConfidenceBadge
 import com.babyphotos.archive.util.PhotoPermissionUtils
 import java.io.File
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     paddingValues: PaddingValues,
@@ -91,7 +97,7 @@ fun HomeScreen(
         val granted = permissions.values.all { it }
         viewModel.onPermissionResult(granted)
         if (granted) {
-            viewModel.startScan()
+            viewModel.requestStartScan()
         }
     }
 
@@ -105,7 +111,7 @@ fun HomeScreen(
         AlertDialog(
             onDismissRequest = viewModel::dismissMovePermissionDialog,
             title = { Text("需要文件管理权限") },
-            text = { Text("添加到宝宝相册需要移动照片。请在系统设置中允许“管理所有文件”，授权后返回本页再点击添加。") },
+            text = { Text("添加到宝宝相册需要移动照片或视频。请在系统设置中允许“管理所有文件”，授权后返回本页再点击添加。") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -131,6 +137,38 @@ fun HomeScreen(
         )
     }
 
+    if (uiState.showScanStartDateDialog) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = System.currentTimeMillis()
+        )
+
+        DatePickerDialog(
+            onDismissRequest = viewModel::dismissScanStartDateDialog,
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            viewModel.confirmScanStartDate(millis / 1000)
+                        }
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissScanStartDateDialog) {
+                    Text("取消")
+                }
+            }
+        ) {
+            DatePicker(
+                state = datePickerState,
+                title = { Text("设置扫描起始时间") },
+                headline = { Text("请选择开始扫描的日期") }
+            )
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -151,7 +189,7 @@ fun HomeScreen(
             style = MaterialTheme.typography.headlineMedium
         )
         Text(
-            text = "AI 智能识别，自动归档",
+            text = "AI 智能识别照片和视频，自动归档",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -162,13 +200,13 @@ fun HomeScreen(
         if (uiState.isScanning) {
             CircularProgressIndicator()
             Spacer(modifier = Modifier.height(8.dp))
-            Text("正在扫描...", style = MaterialTheme.typography.bodyMedium)
+            Text("正在扫描照片和视频...", style = MaterialTheme.typography.bodyMedium)
         } else {
             Button(
                 onClick = {
                     if (PhotoPermissionUtils.hasFullReadPermission(context)) {
                         viewModel.onPermissionResult(true)
-                        viewModel.startScan()
+                        viewModel.requestStartScan()
                     } else {
                         permissionLauncher.launch(PhotoPermissionUtils.requiredReadPermissions)
                     }
@@ -192,7 +230,7 @@ fun HomeScreen(
             if (!uiState.hasPhotoPermission) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "需要相册读取权限才能扫描照片",
+                    "需要相册读取权限才能扫描照片和视频",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -201,7 +239,7 @@ fun HomeScreen(
             if (!uiState.hasMovePermission) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "添加照片需要文件管理权限",
+                    "添加照片或视频需要文件管理权限",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -218,11 +256,11 @@ fun HomeScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("统计", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("已归档宝宝照片: ${uiState.babyPhotoCount}")
+                Text("已归档宝宝媒体: ${uiState.babyPhotoCount}")
 
                 uiState.lastScanSummary?.let { summary ->
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("上次扫描: 共${summary.totalScanned}张, 自动添加${summary.autoAdded}张, 待确认${summary.needsConfirmation}张")
+                    Text("上次扫描: 共${summary.totalScanned}个, 自动添加${summary.autoAdded}个, 待确认${summary.needsConfirmation}个")
                 }
             }
         }
@@ -237,7 +275,7 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "待确认照片 (${uiState.pendingItems.size})",
+                    "待确认照片/视频 (${uiState.pendingItems.size})",
                     style = MaterialTheme.typography.titleMedium
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -295,6 +333,11 @@ private fun PendingPhotoItem(
         ) {
             val imagePath = entity.movedTo ?: entity.path
             val context = LocalContext.current
+            val placeholder = if (entity.isVideo()) {
+                painterResource(android.R.drawable.ic_media_play)
+            } else {
+                painterResource(android.R.drawable.ic_menu_gallery)
+            }
 
             AsyncImage(
                 model = ImageRequest.Builder(context)
@@ -302,13 +345,13 @@ private fun PendingPhotoItem(
                     .crossfade(true)
                     .size(180)
                     .build(),
-                contentDescription = "待确认照片缩略图",
+                contentDescription = if (entity.isVideo()) "待确认视频缩略图" else "待确认照片缩略图",
                 modifier = Modifier
                     .size(64.dp)
                     .clip(RoundedCornerShape(10.dp)),
                 contentScale = ContentScale.Crop,
-                placeholder = painterResource(android.R.drawable.ic_menu_gallery),
-                error = painterResource(android.R.drawable.ic_menu_gallery)
+                placeholder = placeholder,
+                error = placeholder
             )
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -337,3 +380,5 @@ private fun PendingPhotoItem(
         }
     }
 }
+
+private fun ImageAnalysisEntity.isVideo(): Boolean = mediaType == MediaType.VIDEO.name

@@ -7,6 +7,7 @@ import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import com.babyphotos.archive.domain.model.MediaType
 import com.babyphotos.archive.domain.model.ScannedPhoto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,6 +17,7 @@ class AlbumManager(private val context: Context) {
 
     companion object {
         const val BABY_ALBUM_DIR = "Pictures/BabyAlbum"
+        const val BABY_VIDEO_ALBUM_DIR = "Movies/BabyAlbum"
     }
 
     suspend fun moveToBabyAlbum(photo: ScannedPhoto): Result<String> =
@@ -38,11 +40,12 @@ class AlbumManager(private val context: Context) {
     suspend fun moveToBabyAlbum(
         path: String,
         mediaStoreId: Long?,
-        mimeType: String = "image/jpeg"
+        mimeType: String = "image/jpeg",
+        mediaType: MediaType = MediaType.IMAGE
     ): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val resolvedId = mediaStoreId ?: resolveMediaStoreIdByPath(path)
+                val resolvedId = mediaStoreId ?: resolveMediaStoreIdByPath(path, mediaType)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     check(resolvedId != null) { "MediaStore id not found for $path" }
                 }
@@ -52,7 +55,8 @@ class AlbumManager(private val context: Context) {
                     path = path,
                     dateAdded = 0L,
                     mimeType = mimeType,
-                    size = 0L
+                    size = 0L,
+                    mediaType = mediaType
                 )
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -71,46 +75,55 @@ class AlbumManager(private val context: Context) {
 
     private fun moveWithMediaStore(photo: ScannedPhoto): String {
         val resolver = context.contentResolver
+        val sourceCollectionUri = photo.mediaType.collectionUri()
         val sourceUri = ContentUris.withAppendedId(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            sourceCollectionUri,
             photo.id
         )
         val sourceFile = File(photo.path)
         val displayName = sourceFile.name.takeIf { it.isNotBlank() }
-            ?: "baby_photo_${photo.id}.jpg"
-        val targetRelativePath = "$BABY_ALBUM_DIR/"
-        val finalDisplayName = resolveUniqueDisplayName(targetRelativePath, displayName)
+            ?: photo.defaultDisplayName()
+        val targetRelativePath = "${photo.mediaType.targetRelativePath()}/"
+        val finalDisplayName = resolveUniqueDisplayName(targetRelativePath, displayName, photo.mediaType)
 
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.RELATIVE_PATH, targetRelativePath)
-            put(MediaStore.Images.Media.DISPLAY_NAME, finalDisplayName)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, finalDisplayName)
         }
 
         val updatedRows = resolver.update(sourceUri, values, null, null)
         check(updatedRows > 0) { "MediaStore move failed for ${photo.path}" }
 
         return queryDataPath(sourceUri)
-            ?: File(Environment.getExternalStorageDirectory(), "$BABY_ALBUM_DIR/$finalDisplayName").absolutePath
+            ?: File(Environment.getExternalStorageDirectory(), "${photo.mediaType.targetRelativePath()}/$finalDisplayName").absolutePath
     }
 
-    private fun resolveUniqueDisplayName(relativePath: String, displayName: String): String {
+    private fun resolveUniqueDisplayName(
+        relativePath: String,
+        displayName: String,
+        mediaType: MediaType
+    ): String {
         var candidate = displayName
         var counter = 1
-        while (existsInMediaStore(relativePath, candidate)) {
+        while (existsInMediaStore(relativePath, candidate, mediaType)) {
             candidate = buildIndexedDisplayName(displayName, counter)
             counter++
         }
         return candidate
     }
 
-    private fun existsInMediaStore(relativePath: String, displayName: String): Boolean {
-        val projection = arrayOf(MediaStore.Images.Media._ID)
-        val selection = "${MediaStore.Images.Media.RELATIVE_PATH} = ? AND " +
-            "${MediaStore.Images.Media.DISPLAY_NAME} = ?"
+    private fun existsInMediaStore(
+        relativePath: String,
+        displayName: String,
+        mediaType: MediaType
+    ): Boolean {
+        val projection = arrayOf(MediaStore.MediaColumns._ID)
+        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND " +
+            "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
         val selectionArgs = arrayOf(relativePath, displayName)
 
         return context.contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            mediaType.collectionUri(),
             projection,
             selection,
             selectionArgs,
@@ -132,31 +145,31 @@ class AlbumManager(private val context: Context) {
     }
 
     private fun queryDataPath(uri: android.net.Uri): String? {
-        val projection = arrayOf(MediaStore.Images.Media.DATA)
+        val projection = arrayOf(MediaStore.MediaColumns.DATA)
         return context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
-                cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA))
+                cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA))
             } else {
                 null
             }
         }
     }
 
-    private suspend fun resolveMediaStoreIdByPath(path: String): Long? =
+    private suspend fun resolveMediaStoreIdByPath(path: String, mediaType: MediaType): Long? =
         withContext(Dispatchers.IO) {
-            val projection = arrayOf(MediaStore.Images.Media._ID)
-            val selection = "${MediaStore.Images.Media.DATA} = ?"
+            val projection = arrayOf(MediaStore.MediaColumns._ID)
+            val selection = "${MediaStore.MediaColumns.DATA} = ?"
             val selectionArgs = arrayOf(path)
 
             context.contentResolver.query(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                mediaType.collectionUri(),
                 projection,
                 selection,
                 selectionArgs,
                 null
             )?.use { cursor ->
                 if (cursor.moveToFirst()) {
-                    cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
+                    cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
                 } else {
                     null
                 }
@@ -167,7 +180,7 @@ class AlbumManager(private val context: Context) {
         val sourceFile = File(photo.path)
         check(sourceFile.exists()) { "Source file not found: ${photo.path}" }
 
-        val albumDir = File(Environment.getExternalStorageDirectory(), BABY_ALBUM_DIR)
+        val albumDir = File(Environment.getExternalStorageDirectory(), photo.mediaType.targetRelativePath())
         if (!albumDir.exists()) {
             check(albumDir.mkdirs()) { "Failed to create baby album directory: ${albumDir.absolutePath}" }
         }
@@ -205,7 +218,7 @@ class AlbumManager(private val context: Context) {
         MediaScannerConnection.scanFile(
             context,
             arrayOf(finalDest.absolutePath, sourceFile.absolutePath),
-            arrayOf(photo.mimeType),
+            arrayOf(photo.mimeType, photo.mimeType),
             null
         )
 
@@ -214,4 +227,22 @@ class AlbumManager(private val context: Context) {
 
     fun getBabyAlbumPath(): String =
         File(Environment.getExternalStorageDirectory(), BABY_ALBUM_DIR).absolutePath
+
+    private fun MediaType.collectionUri(): android.net.Uri =
+        when (this) {
+            MediaType.IMAGE -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            MediaType.VIDEO -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        }
+
+    private fun MediaType.targetRelativePath(): String =
+        when (this) {
+            MediaType.IMAGE -> BABY_ALBUM_DIR
+            MediaType.VIDEO -> BABY_VIDEO_ALBUM_DIR
+        }
+
+    private fun ScannedPhoto.defaultDisplayName(): String =
+        when (mediaType) {
+            MediaType.IMAGE -> "baby_photo_$id.jpg"
+            MediaType.VIDEO -> "baby_video_$id.mp4"
+        }
 }

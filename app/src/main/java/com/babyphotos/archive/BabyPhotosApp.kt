@@ -1,21 +1,16 @@
 package com.babyphotos.archive
 
 import android.app.Application
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.babyphotos.archive.data.repository.AnalysisRepository
 import com.babyphotos.archive.domain.album.AlbumManager
 import com.babyphotos.archive.domain.classifier.ClassificationEngine
 import com.babyphotos.archive.domain.preprocessor.ImagePreprocessor
+import com.babyphotos.archive.domain.preprocessor.VideoFrameExtractor
 import com.babyphotos.archive.domain.recognizer.BabyRecognizer
 import com.babyphotos.archive.domain.recognizer.BabyRecognizerImpl
 import com.babyphotos.archive.domain.scanner.MediaStorePhotoScanner
 import com.babyphotos.archive.util.SettingsManager
-import com.babyphotos.archive.worker.DailyScanWorker
-import java.util.concurrent.TimeUnit
 
 class BabyPhotosApp : Application() {
 
@@ -33,8 +28,7 @@ class BabyPhotosApp : Application() {
             apiKey = settingsManager.apiKey,
             modelName = settingsManager.modelName
         )
-
-        scheduleDailyScan()
+        cancelExistingScheduledScan()
     }
 
     fun updateRecognizer(apiBaseUrl: String, apiKey: String, modelName: String) {
@@ -47,6 +41,7 @@ class BabyPhotosApp : Application() {
             maxSize = settingsManager.maxImageSize,
             jpegQuality = settingsManager.jpegQuality
         )
+        val videoFrameExtractor = VideoFrameExtractor(preprocessor)
         val classifier = ClassificationEngine(
             autoAddThreshold = settingsManager.autoAddThreshold,
             confirmThreshold = settingsManager.confirmThreshold
@@ -57,6 +52,7 @@ class BabyPhotosApp : Application() {
             context = this,
             scanner = scanner,
             preprocessor = preprocessor,
+            videoFrameExtractor = videoFrameExtractor,
             recognizer = createRecognizer(apiBaseUrl, apiKey, modelName),
             classifier = classifier,
             albumManager = albumManager,
@@ -72,22 +68,11 @@ class BabyPhotosApp : Application() {
         )
     }
 
-    private fun scheduleDailyScan() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresBatteryNotLow(true)
-            .build()
+    private fun cancelExistingScheduledScan() {
+        WorkManager.getInstance(this).cancelUniqueWork(DAILY_SCAN_WORK_NAME)
+    }
 
-        val scanRequest = PeriodicWorkRequestBuilder<DailyScanWorker>(
-            24, TimeUnit.HOURS
-        )
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "daily_baby_photo_scan",
-            ExistingPeriodicWorkPolicy.KEEP,
-            scanRequest
-        )
+    companion object {
+        private const val DAILY_SCAN_WORK_NAME = "daily_baby_photo_scan"
     }
 }

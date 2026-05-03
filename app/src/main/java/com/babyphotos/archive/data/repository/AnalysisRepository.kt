@@ -7,9 +7,13 @@ import com.babyphotos.archive.data.local.ImageAnalysisEntity
 import com.babyphotos.archive.domain.album.AlbumManager
 import com.babyphotos.archive.domain.model.ClassificationAction
 import com.babyphotos.archive.domain.classifier.ClassificationEngine
+import com.babyphotos.archive.domain.model.BabyDetectionResult
 import com.babyphotos.archive.domain.model.ClassificationDecision
+import com.babyphotos.archive.domain.model.MediaType
 import com.babyphotos.archive.domain.model.ScanSummary
+import com.babyphotos.archive.domain.model.ScannedPhoto
 import com.babyphotos.archive.domain.preprocessor.ImagePreprocessor
+import com.babyphotos.archive.domain.preprocessor.VideoFrameExtractor
 import com.babyphotos.archive.domain.recognizer.BabyRecognizer
 import com.babyphotos.archive.domain.scanner.PhotoScanner
 import com.babyphotos.archive.util.SettingsManager
@@ -25,6 +29,7 @@ class AnalysisRepository(
     private val context: Context,
     private val scanner: PhotoScanner,
     private val preprocessor: ImagePreprocessor,
+    private val videoFrameExtractor: VideoFrameExtractor,
     private val recognizer: BabyRecognizer,
     private val classifier: ClassificationEngine,
     private val albumManager: AlbumManager,
@@ -34,24 +39,24 @@ class AnalysisRepository(
     private val semaphore = Semaphore(4)
 
     suspend fun runDailyScan(): ScanSummary = coroutineScope {
-        // 1. Scan photos from scanStartDate or today
+        // 1. Scan media from scanStartDate or today
         val scanStartDate = settingsManager.scanStartDate
-        val photos = if (scanStartDate > 0L) {
+        val mediaItems = if (scanStartDate > 0L) {
             scanner.scanPhotosSince(scanStartDate)
         } else {
             scanner.scanTodayPhotos()
         }
-        Log.d(TAG, "Scanned ${photos.size} photos for today")
+        Log.d(TAG, "Scanned ${mediaItems.size} media items")
 
-        // 2. Filter out already-analyzed photos（含已移动到宝宝相册后路径变化的情况）
-        val newPhotos = photos.filter { photo ->
-            dao.getByPathOrMovedTo(photo.path) == null
+        // 2. Filter out already-analyzed media（含已移动到宝宝相册后路径变化的情况）
+        val newMediaItems = mediaItems.filter { media ->
+            dao.getByPathOrMovedTo(media.path) == null
         }
-        Log.d(TAG, "${newPhotos.size} new photos to analyze")
+        Log.d(TAG, "${newMediaItems.size} new media items to analyze")
 
-        if (newPhotos.isEmpty()) {
+        if (newMediaItems.isEmpty()) {
             return@coroutineScope ScanSummary(
-                totalScanned = photos.size,
+                totalScanned = mediaItems.size,
                 newlyAnalyzed = 0,
                 autoAdded = 0,
                 needsConfirmation = 0,
@@ -59,16 +64,14 @@ class AnalysisRepository(
             )
         }
 
-        // 3. Process each photo with concurrency control
-        val decisions = newPhotos.map { photo ->
+        // 3. Process each media item with concurrency control
+        val decisions = newMediaItems.map { media ->
             async(Dispatchers.IO) {
                 semaphore.withPermit {
                     try {
-                        val preprocessed = preprocessor.preprocess(photo)
-                        val result = recognizer.recognize(preprocessed.base64Data)
-                        result.getOrNull()?.let { classifier.classify(photo, it) }
+                        analyzeMedia(media)
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to analyze ${photo.path}", e)
+                        Log.e(TAG, "Failed to analyze ${media.path}", e)
                         null
                     }
                 }
@@ -105,12 +108,58 @@ class AnalysisRepository(
         val confirmationItems = needsConfirm + moveFailures
 
         ScanSummary(
-            totalScanned = photos.size,
-            newlyAnalyzed = newPhotos.size,
+            totalScanned = mediaItems.size,
+            newlyAnalyzed = newMediaItems.size,
             autoAdded = autoAddedCount,
             needsConfirmation = confirmationItems.size,
             confirmationItems = confirmationItems
         )
+    }
+
+    private suspend fun analyzeMedia(media: ScannedPhoto): ClassificationDecision? {
+        return when (media.mediaType) {
+            MediaType.IMAGE -> {
+                val preprocessed = preprocessor.preprocess(media)
+                recognizer.recognize(preprocessed.base64Data)
+                    .getOrNull()
+                    ?.let { classifier.classify(media, it) }
+            }
+
+            MediaType.VIDEO -> analyzeVideo(media)
+        }
+    }
+
+    private suspend fun analyzeVideo(video: ScannedPhoto): ClassificationDecision? {
+        val frames = videoFrameExtractor.extractFrames(video)
+        if (frames.isEmpty()) return null
+
+        var bestBabyFrame: Pair<Int, BabyDetectionResult>? = null
+        var bestFallbackFrame: Pair<Int, BabyDetectionResult>? = null
+
+        frames.forEachIndexed { index, frame ->
+            val result = recognizer.recognize(frame.base64Data).getOrNull() ?: return@forEachIndexed
+            val frameResult = result.copy(reason = "视频第 ${index + 1} 帧：${result.reason}")
+            val decision = classifier.classify(video, frameResult)
+
+            if (decision.action == ClassificationAction.AUTO_ADD) {
+                return decision
+            }
+
+            if (frameResult.containsBaby) {
+                val currentBest = bestBabyFrame?.second
+                if (currentBest == null || frameResult.confidence > currentBest.confidence) {
+                    bestBabyFrame = index to frameResult
+                }
+            } else {
+                val currentBest = bestFallbackFrame?.second
+                if (currentBest == null || frameResult.confidence > currentBest.confidence) {
+                    bestFallbackFrame = index to frameResult
+                }
+            }
+        }
+
+        val result = bestBabyFrame?.second ?: bestFallbackFrame?.second ?: return null
+        return classifier.classify(video, result)
     }
 
     suspend fun confirmAndMove(decision: ClassificationDecision): Result<String> =
@@ -127,7 +176,9 @@ class AnalysisRepository(
             val sourcePath = entity.movedTo ?: entity.path
             val movedPath = albumManager.moveToBabyAlbum(
                 path = sourcePath,
-                mediaStoreId = entity.mediaStoreId
+                mediaStoreId = entity.mediaStoreId,
+                mimeType = entity.mimeType,
+                mediaType = entity.mediaType.toMediaType()
             ).getOrThrow()
             dao.insert(
                 entity.copy(
@@ -160,6 +211,8 @@ private fun ClassificationDecision.toEntity(
         id = hashPath(photo.path),
         path = photo.path,
         mediaStoreId = photo.id,
+        mediaType = photo.mediaType.name,
+        mimeType = photo.mimeType,
         containsBaby = detectionResult.containsBaby,
         confidence = detectionResult.confidence,
         reason = detectionResult.reason,
@@ -174,3 +227,6 @@ private fun hashPath(path: String): String {
     val hash = digest.digest(path.toByteArray())
     return hash.joinToString("") { "%02x".format(it) }
 }
+
+private fun String.toMediaType(): MediaType =
+    runCatching { MediaType.valueOf(this) }.getOrDefault(MediaType.IMAGE)
