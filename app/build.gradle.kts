@@ -79,6 +79,10 @@ dependencies {
     // Image loading
     implementation(libs.coil.compose)
 
+    // Video playback (历史详情内预览)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
+
     // Coroutines
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)

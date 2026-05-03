@@ -17,7 +17,6 @@ class AlbumManager(private val context: Context) {
 
     companion object {
         const val BABY_ALBUM_DIR = "Pictures/BabyAlbum"
-        const val BABY_VIDEO_ALBUM_DIR = "Movies/BabyAlbum"
     }
 
     suspend fun moveToBabyAlbum(photo: ScannedPhoto): Result<String> =
@@ -236,8 +235,7 @@ class AlbumManager(private val context: Context) {
 
     private fun MediaType.targetRelativePath(): String =
         when (this) {
-            MediaType.IMAGE -> BABY_ALBUM_DIR
-            MediaType.VIDEO -> BABY_VIDEO_ALBUM_DIR
+            MediaType.IMAGE, MediaType.VIDEO -> BABY_ALBUM_DIR
         }
 
     private fun ScannedPhoto.defaultDisplayName(): String =

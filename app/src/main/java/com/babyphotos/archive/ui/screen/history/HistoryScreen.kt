@@ -45,22 +45,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
 import com.babyphotos.archive.domain.model.ClassificationAction
 import com.babyphotos.archive.domain.model.MediaType
+import com.babyphotos.archive.ui.component.AnalysisMediaThumbnail
 import com.babyphotos.archive.ui.component.ConfirmDialog
 import com.babyphotos.archive.ui.component.ConfidenceBadge
+import com.babyphotos.archive.ui.component.HistoryDetailMediaPreview
 import com.babyphotos.archive.util.PhotoPermissionUtils
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -211,28 +209,13 @@ private fun HistoryItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val imagePath = entity.movedTo ?: entity.path
-            val imageFile = File(imagePath)
-            val context = LocalContext.current
-            val placeholder = if (entity.isVideo()) {
-                painterResource(android.R.drawable.ic_media_play)
-            } else {
-                painterResource(android.R.drawable.ic_menu_gallery)
-            }
-
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(imageFile)
-                    .crossfade(true)
-                    .size(160)
-                    .build(),
-                contentDescription = null,
+            AnalysisMediaThumbnail(
+                entity = entity,
                 modifier = Modifier
                     .size(56.dp)
                     .clip(RoundedCornerShape(8.dp)),
                 contentScale = ContentScale.Crop,
-                placeholder = placeholder,
-                error = placeholder
+                coilSizePx = 160
             )
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -286,14 +269,7 @@ private fun HistoryDetailDialog(
     entity: ImageAnalysisEntity,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
     val imagePath = entity.movedTo ?: entity.path
-    val imageFile = File(imagePath)
-    val placeholder = if (entity.isVideo()) {
-        painterResource(android.R.drawable.ic_media_play)
-    } else {
-        painterResource(android.R.drawable.ic_menu_gallery)
-    }
     val analyzedAt = remember(entity.timestamp) {
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(entity.timestamp))
     }
@@ -317,19 +293,9 @@ private fun HistoryDetailDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(imageFile)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = if (entity.isVideo()) "历史视频预览" else "历史照片大图",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 220.dp, max = 360.dp)
-                        .clip(RoundedCornerShape(14.dp)),
-                    contentScale = ContentScale.Fit,
-                    placeholder = placeholder,
-                    error = placeholder
+                HistoryDetailMediaPreview(
+                    entity = entity,
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))

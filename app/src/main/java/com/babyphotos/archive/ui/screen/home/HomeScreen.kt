@@ -47,19 +47,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
 import com.babyphotos.archive.domain.model.MediaType
+import com.babyphotos.archive.ui.component.AnalysisMediaThumbnail
 import com.babyphotos.archive.ui.component.ConfidenceBadge
 import com.babyphotos.archive.util.PhotoPermissionUtils
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -331,27 +328,13 @@ private fun PendingPhotoItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val imagePath = entity.movedTo ?: entity.path
-            val context = LocalContext.current
-            val placeholder = if (entity.isVideo()) {
-                painterResource(android.R.drawable.ic_media_play)
-            } else {
-                painterResource(android.R.drawable.ic_menu_gallery)
-            }
-
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(File(imagePath))
-                    .crossfade(true)
-                    .size(180)
-                    .build(),
-                contentDescription = if (entity.isVideo()) "待确认视频缩略图" else "待确认照片缩略图",
+            AnalysisMediaThumbnail(
+                entity = entity,
                 modifier = Modifier
                     .size(64.dp)
                     .clip(RoundedCornerShape(10.dp)),
                 contentScale = ContentScale.Crop,
-                placeholder = placeholder,
-                error = placeholder
+                coilSizePx = 180
             )
 
             Spacer(modifier = Modifier.width(12.dp))
