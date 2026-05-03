@@ -31,9 +31,7 @@
 - **去重与记录**：已分析路径写入 Room，避免对同一张照片重复调用 API。
 - **后台任务**：WorkManager 周期性扫描（需网络等约束，详见代码与 `ORIGIN.md`）。
 
-![image.png](docs/image.png)
-![image2.png](docs/image2.png)
-![image3.png](docs/image3.png)
+<p align="center"><img src="docs/image.png" alt="截图" width="32%" /> <img src="docs/image2.png" alt="截图" width="32%" /> <img src="docs/image3.png" alt="截图" width="32%" /></p>
 
 ---
 
