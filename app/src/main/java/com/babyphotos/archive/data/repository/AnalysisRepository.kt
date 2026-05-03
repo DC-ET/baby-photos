@@ -15,6 +15,7 @@ import com.babyphotos.archive.domain.model.ScannedPhoto
 import com.babyphotos.archive.domain.preprocessor.ImagePreprocessor
 import com.babyphotos.archive.domain.preprocessor.VideoFrameExtractor
 import com.babyphotos.archive.domain.recognizer.BabyRecognizer
+import com.babyphotos.archive.domain.scanner.computeEffectiveMediaScanLowerBound
 import com.babyphotos.archive.domain.scanner.PhotoScanner
 import com.babyphotos.archive.util.SettingsManager
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +24,15 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.security.MessageDigest
+
+/** [removeFromBabyAlbum] 的结果：已移回磁盘，或归档文件已丢失仅更新了数据库。 */
+sealed class RemoveFromBabyAlbumOutcome {
+    data class MovedBack(val path: String) : RemoveFromBabyAlbumOutcome()
+    data object ClearedStaleRecord : RemoveFromBabyAlbumOutcome()
+}
 
 class AnalysisRepository(
     private val context: Context,
@@ -39,14 +48,27 @@ class AnalysisRepository(
     private val semaphore = Semaphore(4)
 
     suspend fun runDailyScan(): ScanSummary = coroutineScope {
-        // 1. Scan media from scanStartDate or today
+        // 1. Scan media from scanStartDate or today（已配置起始日时支持按上次水位增量查询）
         val scanStartDate = settingsManager.scanStartDate
-        val mediaItems = if (scanStartDate > 0L) {
-            scanner.scanPhotosSince(scanStartDate)
+        val useConfiguredStart = scanStartDate > 0L
+        val effectiveLower = if (useConfiguredStart) {
+            computeEffectiveMediaScanLowerBound(
+                configuredStartEpochSec = scanStartDate,
+                snapshotAtLastScan = settingsManager.scanStartDateSnapshotAtLastScan,
+                lastDateAddedWatermark = settingsManager.lastScanMediaDateAddedWatermark
+            )
+        } else {
+            0L
+        }
+        val mediaItems = if (useConfiguredStart) {
+            scanner.scanPhotosSince(effectiveLower)
         } else {
             scanner.scanTodayPhotos()
         }
-        Log.d(TAG, "Scanned ${mediaItems.size} media items")
+        Log.d(
+            TAG,
+            "Scanned ${mediaItems.size} media items (useConfiguredStart=$useConfiguredStart effectiveLower=$effectiveLower)"
+        )
 
         // 2. Filter out already-analyzed media（含已移动到宝宝相册后路径变化的情况）
         val newMediaItems = mediaItems.filter { media ->
@@ -55,6 +77,7 @@ class AnalysisRepository(
         Log.d(TAG, "${newMediaItems.size} new media items to analyze")
 
         if (newMediaItems.isEmpty()) {
+            commitScanCursorAfterSuccessfulScan(useConfiguredStart, scanStartDate, mediaItems)
             return@coroutineScope ScanSummary(
                 totalScanned = mediaItems.size,
                 newlyAnalyzed = 0,
@@ -107,6 +130,7 @@ class AnalysisRepository(
         }
         val confirmationItems = needsConfirm + moveFailures
 
+        commitScanCursorAfterSuccessfulScan(useConfiguredStart, scanStartDate, mediaItems)
         ScanSummary(
             totalScanned = mediaItems.size,
             newlyAnalyzed = newMediaItems.size,
@@ -114,6 +138,25 @@ class AnalysisRepository(
             needsConfirmation = confirmationItems.size,
             confirmationItems = confirmationItems
         )
+    }
+
+    /**
+     * 在整次 [runDailyScan] 成功结束后更新增量游标；失败或未执行到此则不应调用。
+     */
+    private fun commitScanCursorAfterSuccessfulScan(
+        useConfiguredStart: Boolean,
+        configuredScanStartDate: Long,
+        mediaItems: List<ScannedPhoto>
+    ) {
+        if (!useConfiguredStart) {
+            settingsManager.scanStartDateSnapshotAtLastScan = 0L
+            settingsManager.lastScanMediaDateAddedWatermark = 0L
+            return
+        }
+        settingsManager.scanStartDateSnapshotAtLastScan = configuredScanStartDate
+        val maxAdded = mediaItems.maxOfOrNull { it.dateAdded } ?: return
+        val prev = settingsManager.lastScanMediaDateAddedWatermark
+        settingsManager.lastScanMediaDateAddedWatermark = maxOf(prev, maxAdded)
     }
 
     private suspend fun analyzeMedia(media: ScannedPhoto): ClassificationDecision? {
@@ -195,6 +238,61 @@ class AnalysisRepository(
 
     suspend fun reject(decision: ClassificationDecision) {
         dao.insert(decision.toEntity(null, overrideAction = ClassificationAction.IGNORE))
+    }
+
+    /**
+     * 从宝宝相册移回原始目录（或同目录下自动加后缀），并标记为误识别已忽略。
+     * 若归档路径上文件已不存在，不视为错误，仅更新数据库（清除归档状态并标记忽略）。
+     */
+    suspend fun removeFromBabyAlbum(entity: ImageAnalysisEntity): Result<RemoveFromBabyAlbumOutcome> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val archived = entity.movedTo ?: error("该记录未归档到宝宝相册")
+                if (!File(archived).exists()) {
+                    clearBabyAlbumRecordWithoutMove(entity)
+                    return@runCatching RemoveFromBabyAlbumOutcome.ClearedStaleRecord
+                }
+
+                val moveResult = albumManager.moveBackFromBabyAlbum(
+                    archivedPath = archived,
+                    originalPath = entity.path,
+                    mediaStoreId = entity.mediaStoreId,
+                    mimeType = entity.mimeType,
+                    mediaType = entity.mediaType.toMediaType()
+                )
+                if (moveResult.isFailure) {
+                    if (!File(archived).exists()) {
+                        clearBabyAlbumRecordWithoutMove(entity)
+                        return@runCatching RemoveFromBabyAlbumOutcome.ClearedStaleRecord
+                    }
+                    moveResult.getOrThrow()
+                }
+                val restoredPath = moveResult.getOrThrow()
+                dao.insert(
+                    entity.copy(
+                        path = restoredPath,
+                        movedTo = null,
+                        containsBaby = false,
+                        action = ClassificationAction.IGNORE.name,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+                RemoveFromBabyAlbumOutcome.MovedBack(restoredPath)
+            }.onFailure { e ->
+                Log.e(TAG, "Failed to remove from baby album ${entity.path}", e)
+            }
+        }
+
+    private suspend fun clearBabyAlbumRecordWithoutMove(entity: ImageAnalysisEntity) {
+        dao.insert(
+            entity.copy(
+                path = entity.path,
+                movedTo = null,
+                containsBaby = false,
+                action = ClassificationAction.IGNORE.name,
+                timestamp = System.currentTimeMillis()
+            )
+        )
     }
 
     companion object {

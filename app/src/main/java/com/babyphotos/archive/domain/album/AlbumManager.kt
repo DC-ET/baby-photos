@@ -36,6 +36,44 @@ class AlbumManager(private val context: Context) {
             }
         }
 
+    /**
+     * 将已归档到宝宝相册的媒体移回 [originalPath] 所在目录（文件名与 [originalPath] 一致，冲突时自动加后缀）。
+     * @param archivedPath 当前磁盘路径（通常为 [ImageAnalysisEntity.movedTo]）
+     * @param originalPath 扫描时的原始路径（[ImageAnalysisEntity.path]）
+     */
+    suspend fun moveBackFromBabyAlbum(
+        archivedPath: String,
+        originalPath: String,
+        mediaStoreId: Long?,
+        mimeType: String = "image/jpeg",
+        mediaType: MediaType = MediaType.IMAGE
+    ): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val resolvedId = mediaStoreId ?: resolveMediaStoreIdByPath(archivedPath, mediaType)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    check(resolvedId != null) { "MediaStore id not found for $archivedPath" }
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                    Environment.isExternalStorageManager()
+                ) {
+                    return@runCatching moveWithFileSystemBack(archivedPath, originalPath, mimeType)
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    return@runCatching moveWithMediaStoreBack(
+                        archivedPath = archivedPath,
+                        originalPath = originalPath,
+                        mediaId = resolvedId!!,
+                        mediaType = mediaType
+                    )
+                }
+
+                moveWithFileSystemBack(archivedPath, originalPath, mimeType)
+            }
+        }
+
     suspend fun moveToBabyAlbum(
         path: String,
         mediaStoreId: Long?,
@@ -222,6 +260,87 @@ class AlbumManager(private val context: Context) {
         )
 
         return finalDest.absolutePath
+    }
+
+    private fun moveWithMediaStoreBack(
+        @Suppress("UNUSED_PARAMETER") archivedPath: String,
+        originalPath: String,
+        mediaId: Long,
+        mediaType: MediaType
+    ): String {
+        val (targetRelativePath, displayNameBase) = absolutePathToRelativePathAndDisplayName(originalPath)
+        val finalDisplayName = resolveUniqueDisplayName(targetRelativePath, displayNameBase, mediaType)
+
+        val resolver = context.contentResolver
+        val sourceUri = ContentUris.withAppendedId(mediaType.collectionUri(), mediaId)
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, finalDisplayName)
+        }
+
+        val updatedRows = resolver.update(sourceUri, values, null, null)
+        check(updatedRows > 0) { "MediaStore restore failed for $archivedPath" }
+
+        return queryDataPath(sourceUri)
+            ?: File(
+                Environment.getExternalStorageDirectory(),
+                "${targetRelativePath.trimEnd('/')}/$finalDisplayName"
+            ).absolutePath
+    }
+
+    private fun moveWithFileSystemBack(archivedPath: String, originalPath: String, mimeType: String): String {
+        val sourceFile = File(archivedPath)
+        check(sourceFile.exists()) { "Source file not found: $archivedPath" }
+
+        val targetFile = File(originalPath)
+        val destDir = targetFile.parentFile ?: error("Invalid original path: $originalPath")
+        if (!destDir.exists()) {
+            check(destDir.mkdirs()) { "Failed to create directory: ${destDir.absolutePath}" }
+        }
+
+        var finalDest = targetFile
+        if (finalDest.exists() && finalDest.absolutePath != sourceFile.absolutePath) {
+            val name = targetFile.nameWithoutExtension
+            val ext = targetFile.extension
+            var counter = 1
+            var candidate: File
+            do {
+                candidate = File(destDir, "${name}_${counter}.${ext}")
+                counter++
+            } while (candidate.exists())
+            finalDest = candidate
+        }
+
+        val moved = sourceFile.renameTo(finalDest)
+        if (!moved) {
+            sourceFile.copyTo(finalDest, overwrite = true)
+            if (!sourceFile.delete()) {
+                finalDest.delete()
+                error("Failed to delete source after copying: ${sourceFile.absolutePath}")
+            }
+        }
+
+        MediaScannerConnection.scanFile(
+            context,
+            arrayOf(sourceFile.absolutePath, finalDest.absolutePath),
+            arrayOf(mimeType, mimeType),
+            null
+        )
+
+        return finalDest.absolutePath
+    }
+
+    private fun absolutePathToRelativePathAndDisplayName(absolutePath: String): Pair<String, String> {
+        val file = File(absolutePath)
+        val displayName = file.name
+        val parent = file.parentFile ?: error("Invalid path: $absolutePath")
+        val extRoot = Environment.getExternalStorageDirectory().absolutePath
+        val parentAbs = parent.absolutePath
+        check(parentAbs.startsWith(extRoot)) { "Path outside primary external storage: $absolutePath" }
+        var relative = parentAbs.removePrefix(extRoot).trimStart(File.separatorChar)
+        relative = relative.replace(File.separatorChar, '/')
+        val relativePath = if (relative.endsWith("/")) relative else "$relative/"
+        return relativePath to displayName
     }
 
     fun getBabyAlbumPath(): String =

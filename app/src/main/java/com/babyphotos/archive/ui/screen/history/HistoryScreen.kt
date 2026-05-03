@@ -74,6 +74,7 @@ fun HistoryScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var selectedEntity by remember { mutableStateOf<ImageAnalysisEntity?>(null) }
+    var removeConfirmEntity by remember { mutableStateOf<ImageAnalysisEntity?>(null) }
 
     uiState.userMessage?.let { message ->
         LaunchedEffect(message) {
@@ -100,10 +101,23 @@ fun HistoryScreen(
         viewModel.refreshMovePermission()
     }
 
+    removeConfirmEntity?.let { target ->
+        ConfirmDialog(
+            title = "移出宝宝相册",
+            message = "将把该文件移回原始目录，并从「宝宝」记录中移除（标记为已忽略）。是否继续？",
+            confirmLabel = "移除",
+            onConfirm = {
+                removeConfirmEntity = null
+                viewModel.removeFromBabyAlbum(target)
+            },
+            onDismiss = { removeConfirmEntity = null }
+        )
+    }
+
     if (uiState.showMovePermissionDialog) {
         ConfirmDialog(
             title = "需要文件管理权限",
-            message = "移动到宝宝相册需要移动照片或视频。请在系统设置中允许“管理所有文件”，授权后返回本页再点击移动。",
+            message = "移动或移回照片、视频需要系统文件访问权限。请在系统设置中允许“管理所有文件”，授权后返回本页再操作。",
             confirmLabel = "去设置",
             onConfirm = {
                 viewModel.dismissMovePermissionDialog()
@@ -172,9 +186,11 @@ fun HistoryScreen(
                     HistoryItem(
                         entity = entity,
                         showMoveAction = uiState.filter == HistoryFilter.IGNORED,
+                        showRemoveAction = uiState.filter == HistoryFilter.BABY,
                         isMoving = uiState.movingItemIds.contains(entity.id),
                         onOpenDetail = { selectedEntity = entity },
-                        onMoveToBabyAlbum = { viewModel.moveIgnoredToBabyAlbum(entity) }
+                        onMoveToBabyAlbum = { viewModel.moveIgnoredToBabyAlbum(entity) },
+                        onRemoveFromBabyAlbum = { removeConfirmEntity = entity }
                     )
                 }
             }
@@ -193,9 +209,11 @@ fun HistoryScreen(
 private fun HistoryItem(
     entity: ImageAnalysisEntity,
     showMoveAction: Boolean,
+    showRemoveAction: Boolean,
     isMoving: Boolean,
     onOpenDetail: () -> Unit,
-    onMoveToBabyAlbum: () -> Unit
+    onMoveToBabyAlbum: () -> Unit,
+    onRemoveFromBabyAlbum: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -257,6 +275,19 @@ private fun HistoryItem(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                     ) {
                         Text(if (isMoving) "移动中" else "移到相册")
+                    }
+                }
+
+                if (showRemoveAction && entity.movedTo != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    TextButton(
+                        onClick = {
+                            onRemoveFromBabyAlbum()
+                        },
+                        enabled = !isMoving,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Text(if (isMoving) "处理中" else "移除")
                     }
                 }
             }

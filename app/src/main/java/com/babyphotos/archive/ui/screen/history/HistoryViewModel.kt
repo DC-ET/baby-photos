@@ -7,11 +7,15 @@ import com.babyphotos.archive.BabyPhotosApp
 import com.babyphotos.archive.data.local.AppDatabase
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
 import com.babyphotos.archive.domain.model.ClassificationAction
+import com.babyphotos.archive.data.repository.RemoveFromBabyAlbumOutcome
 import com.babyphotos.archive.util.PhotoPermissionUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 enum class HistoryFilter { ALL, BABY, CONFIRMED, IGNORED }
 
@@ -75,6 +79,37 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                 userMessage = result.fold(
                     onSuccess = { "已移动到宝宝相册" },
                     onFailure = { "移动失败：${it.message ?: "无法移动照片或视频"}" }
+                )
+            )
+        }
+    }
+
+    fun removeFromBabyAlbum(entity: ImageAnalysisEntity) {
+        val archivedPath = entity.movedTo ?: return
+        if (_uiState.value.movingItemIds.contains(entity.id)) return
+
+        viewModelScope.launch {
+            val fileExists = withContext(Dispatchers.IO) { File(archivedPath).exists() }
+            if (fileExists && !ensureMovePermission()) return@launch
+
+            val app = getApplication<BabyPhotosApp>()
+            _uiState.value = _uiState.value.copy(
+                movingItemIds = _uiState.value.movingItemIds + entity.id,
+                userMessage = null
+            )
+
+            val result = app.repository.removeFromBabyAlbum(entity)
+            _uiState.value = _uiState.value.copy(
+                movingItemIds = _uiState.value.movingItemIds - entity.id,
+                userMessage = result.fold(
+                    onSuccess = { outcome ->
+                        when (outcome) {
+                            is RemoveFromBabyAlbumOutcome.MovedBack -> "已移回原始位置"
+                            RemoveFromBabyAlbumOutcome.ClearedStaleRecord ->
+                                "文件已不存在，已清除相关记录"
+                        }
+                    },
+                    onFailure = { "移除失败：${it.message ?: "无法移回照片或视频"}" }
                 )
             )
         }
