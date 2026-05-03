@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Read(//Users/yangjiayi/Library/Android/sdk/platforms/**)",
+      "Read(//Users/yangjiayi/Library/Android/sdk/build-tools/**)",
+      "Read(//Users/yangjiayi/Library/Android/sdk/**)",
+      "Bash(gradle wrapper *)",
+      "Bash(/usr/libexec/java_home -V)",
+      "Bash(JAVA_HOME=/Users/yangjiayi/Library/Java/JavaVirtualMachines/graalvm-jdk-17.0.11/Contents/Home gradle wrapper --gradle-version 8.11.1)",
+      "Bash(JAVA_HOME=/Users/yangjiayi/Library/Java/JavaVirtualMachines/graalvm-jdk-17.0.11/Contents/Home ANDROID_HOME=/Users/yangjiayi/Library/Android/sdk ./gradlew assembleDebug)",
+      "Bash(JAVA_HOME=/Users/yangjiayi/Library/Java/JavaVirtualMachines/graalvm-jdk-17.0.11/Contents/Home ~/Library/Android/sdk/platform-tools/adb version)",
+      "Bash(JAVA_HOME=/Users/yangjiayi/Library/Java/JavaVirtualMachines/graalvm-jdk-17.0.11/Contents/Home which sdkmanager)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home ANDROID_HOME=/Users/yangjiayi/Library/Android/sdk ./gradlew assembleDebug)",
+      "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home ANDROID_HOME=/Users/yangjiayi/Library/Android/sdk /Users/yangjiayi/AiProjects/baby-photos/gradlew -p /Users/yangjiayi/AiProjects/baby-photos assembleDebug)",
+      "Bash(./gradlew assembleDebug)"
+    ]
+  }
+}

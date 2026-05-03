@@ -1,0 +1,39 @@
+# Built application / APK / AAB
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Android Studio / IntelliJ
+*.iml
+.idea/
+.cxx/
+.externalNativeBuild/
+
+# Gradle
+.gradle/
+**/build/
+!**/src/**/build/
+
+# Local machine config (SDK path, etc.)
+local.properties
+
+# Log / OS
+*.log
+.DS_Store
+
+# Keystore (do not commit signing keys)
+*.jks
+*.keystore
+
+# Kotlin
+.kotlin/
+
+# NDK / CMake
+obj/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output

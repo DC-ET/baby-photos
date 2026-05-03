@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple baby face icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 C42,30 32,40 32,52 C32,64 42,74 54,74 C66,74 76,64 76,52 C76,40 66,30 54,30 Z" />
+    <!-- Eyes -->
+    <path
+        android:fillColor="#6650a4"
+        android:pathData="M46,48 C46,50 44,52 42,52 C40,52 38,50 38,48 C38,46 40,44 42,44 C44,44 46,46 46,48 Z" />
+    <path
+        android:fillColor="#6650a4"
+        android:pathData="M70,48 C70,50 68,52 66,52 C64,52 62,50 62,48 C62,46 64,44 66,44 C68,44 70,46 70,48 Z" />
+    <!-- Smile -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#6650a4"
+        android:strokeWidth="2"
+        android:pathData="M44,58 Q54,66 64,58" />
+</vector>
