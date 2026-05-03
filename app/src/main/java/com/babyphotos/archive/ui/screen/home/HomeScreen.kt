@@ -1,9 +1,11 @@
 package com.babyphotos.archive.ui.screen.home
 
-import android.Manifest
-import android.os.Build
+import android.content.Intent
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
+import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,11 +16,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -27,24 +32,29 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import androidx.core.content.PermissionChecker
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
 import com.babyphotos.archive.ui.component.ConfidenceBadge
-
-private val photoPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    Manifest.permission.READ_MEDIA_IMAGES
-} else {
-    Manifest.permission.READ_EXTERNAL_STORAGE
-}
+import com.babyphotos.archive.util.PhotoPermissionUtils
+import java.io.File
 
 @Composable
 fun HomeScreen(
@@ -54,14 +64,71 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    uiState.userMessage?.let { message ->
+        LaunchedEffect(message) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            viewModel.clearUserMessage()
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshPhotoPermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
+        contract = RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.values.all { it }
         viewModel.onPermissionResult(granted)
         if (granted) {
             viewModel.startScan()
         }
+    }
+
+    val movePermissionLauncher = rememberLauncherForActivityResult(
+        contract = StartActivityForResult()
+    ) {
+        viewModel.refreshPhotoPermission()
+    }
+
+    if (uiState.showMovePermissionDialog) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissMovePermissionDialog,
+            title = { Text("需要文件管理权限") },
+            text = { Text("添加到宝宝相册需要移动照片。请在系统设置中允许“管理所有文件”，授权后返回本页再点击添加。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.dismissMovePermissionDialog()
+                        val intent = PhotoPermissionUtils.createManageStorageIntent(context)
+                        runCatching {
+                            movePermissionLauncher.launch(intent)
+                        }.onFailure {
+                            movePermissionLauncher.launch(
+                                Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                            )
+                        }
+                    }
+                ) {
+                    Text("去设置")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissMovePermissionDialog) {
+                    Text("取消")
+                }
+            }
+        )
     }
 
     Column(
@@ -99,14 +166,11 @@ fun HomeScreen(
         } else {
             Button(
                 onClick = {
-                    val hasPermission = ContextCompat.checkSelfPermission(
-                        context, photoPermission
-                    ) == PermissionChecker.PERMISSION_GRANTED
-
-                    if (hasPermission) {
+                    if (PhotoPermissionUtils.hasFullReadPermission(context)) {
+                        viewModel.onPermissionResult(true)
                         viewModel.startScan()
                     } else {
-                        permissionLauncher.launch(photoPermission)
+                        permissionLauncher.launch(PhotoPermissionUtils.requiredReadPermissions)
                     }
                 },
                 enabled = uiState.isApiConfigured,
@@ -129,6 +193,15 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "需要相册读取权限才能扫描照片",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            if (!uiState.hasMovePermission) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "添加照片需要文件管理权限",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -168,10 +241,16 @@ fun HomeScreen(
                     style = MaterialTheme.typography.titleMedium
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    OutlinedButton(onClick = { viewModel.rejectAll() }) {
+                    OutlinedButton(
+                        onClick = { viewModel.rejectAll() },
+                        enabled = !uiState.isConfirming
+                    ) {
                         Text("全部跳过")
                     }
-                    Button(onClick = { viewModel.confirmAll() }) {
+                    Button(
+                        onClick = { viewModel.confirmAll() },
+                        enabled = !uiState.isConfirming
+                    ) {
                         Text("全部确认")
                     }
                 }
@@ -188,7 +267,8 @@ fun HomeScreen(
                     PendingPhotoItem(
                         entity = entity,
                         onConfirm = { viewModel.confirmItem(entity) },
-                        onReject = { viewModel.rejectItem(entity) }
+                        onReject = { viewModel.rejectItem(entity) },
+                        enabled = !uiState.isConfirming
                     )
                 }
             }
@@ -200,7 +280,8 @@ fun HomeScreen(
 private fun PendingPhotoItem(
     entity: ImageAnalysisEntity,
     onConfirm: () -> Unit,
-    onReject: () -> Unit
+    onReject: () -> Unit,
+    enabled: Boolean
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -212,6 +293,26 @@ private fun PendingPhotoItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val imagePath = entity.movedTo ?: entity.path
+            val context = LocalContext.current
+
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(File(imagePath))
+                    .crossfade(true)
+                    .size(180)
+                    .build(),
+                contentDescription = "待确认照片缩略图",
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+                contentScale = ContentScale.Crop,
+                placeholder = painterResource(android.R.drawable.ic_menu_gallery),
+                error = painterResource(android.R.drawable.ic_menu_gallery)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = entity.path.substringAfterLast("/"),
@@ -222,15 +323,16 @@ private fun PendingPhotoItem(
                 Text(
                     text = entity.reason,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 ConfidenceBadge(confidence = entity.confidence)
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedButton(onClick = onReject) { Text("跳过") }
-                Button(onClick = onConfirm) { Text("添加") }
+                OutlinedButton(onClick = onReject, enabled = enabled) { Text("跳过") }
+                Button(onClick = onConfirm, enabled = enabled) { Text("添加") }
             }
         }
     }

@@ -9,8 +9,12 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ImageAnalysisDao {
 
-    @Query("SELECT * FROM image_analysis WHERE path = :path LIMIT 1")
-    suspend fun getByPath(path: String): ImageAnalysisEntity?
+    /**
+     * 同一张照片移动后 MediaStore 的 DATA 会变成新路径，但库里的 [ImageAnalysisEntity.path]
+     * 仍是扫描时的旧路径；若已归档则当前磁盘路径与 [ImageAnalysisEntity.movedTo] 一致。
+     */
+    @Query("SELECT * FROM image_analysis WHERE path = :path OR moved_to = :path LIMIT 1")
+    suspend fun getByPathOrMovedTo(path: String): ImageAnalysisEntity?
 
     @Query("SELECT * FROM image_analysis WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): ImageAnalysisEntity?

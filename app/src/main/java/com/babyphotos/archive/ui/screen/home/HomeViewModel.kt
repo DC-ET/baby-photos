@@ -12,6 +12,7 @@ import com.babyphotos.archive.data.local.AppDatabase
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
 import com.babyphotos.archive.domain.model.ClassificationAction
 import com.babyphotos.archive.domain.model.ScanSummary
+import com.babyphotos.archive.util.PhotoPermissionUtils
 import com.babyphotos.archive.util.SettingsManager
 import com.babyphotos.archive.worker.DailyScanWorker
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,10 +23,14 @@ import kotlinx.coroutines.launch
 data class HomeUiState(
     val lastScanSummary: ScanSummary? = null,
     val isScanning: Boolean = false,
+    val isConfirming: Boolean = false,
     val isApiConfigured: Boolean = false,
     val hasPhotoPermission: Boolean = false,
+    val hasMovePermission: Boolean = false,
     val babyPhotoCount: Int = 0,
-    val pendingItems: List<ImageAnalysisEntity> = emptyList()
+    val pendingItems: List<ImageAnalysisEntity> = emptyList(),
+    val showMovePermissionDialog: Boolean = false,
+    val userMessage: String? = null
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -47,7 +52,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     init {
         settingsManager.registerListener(prefsListener)
         _uiState.value = _uiState.value.copy(
-            isApiConfigured = settingsManager.isApiConfigured()
+            isApiConfigured = settingsManager.isApiConfigured(),
+            hasPhotoPermission = PhotoPermissionUtils.hasFullReadPermission(application),
+            hasMovePermission = PhotoPermissionUtils.hasMovePermission(application)
         )
         loadBabyPhotoCount()
         loadPendingItems()
@@ -58,7 +65,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onPermissionResult(granted: Boolean) {
-        _uiState.value = _uiState.value.copy(hasPhotoPermission = granted)
+        _uiState.value = _uiState.value.copy(
+            hasPhotoPermission = granted,
+            hasMovePermission = PhotoPermissionUtils.hasMovePermission(getApplication())
+        )
+    }
+
+    fun refreshPhotoPermission() {
+        _uiState.value = _uiState.value.copy(
+            hasPhotoPermission = PhotoPermissionUtils.hasFullReadPermission(getApplication()),
+            hasMovePermission = PhotoPermissionUtils.hasMovePermission(getApplication())
+        )
     }
 
     fun startScan() {
@@ -82,8 +99,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun confirmItem(entity: ImageAnalysisEntity) {
         viewModelScope.launch {
-            val updated = entity.copy(action = ClassificationAction.AUTO_ADD.name)
-            dao.insert(updated)
+            if (!ensureMovePermission()) return@launch
+
+            val app = getApplication<BabyPhotosApp>()
+            _uiState.value = _uiState.value.copy(isConfirming = true, userMessage = null)
+            val result = app.repository.confirmAndMove(entity)
+            _uiState.value = _uiState.value.copy(
+                isConfirming = false,
+                userMessage = result.fold(
+                    onSuccess = { "已添加到宝宝相册" },
+                    onFailure = { "添加失败：${it.message ?: "无法移动照片"}" }
+                )
+            )
         }
     }
 
@@ -96,9 +123,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun confirmAll() {
         viewModelScope.launch {
-            _uiState.value.pendingItems.forEach { entity ->
-                confirmItem(entity)
+            if (!ensureMovePermission()) return@launch
+
+            val app = getApplication<BabyPhotosApp>()
+            val items = _uiState.value.pendingItems
+            if (items.isEmpty()) return@launch
+
+            _uiState.value = _uiState.value.copy(isConfirming = true, userMessage = null)
+            var failures = 0
+            items.forEach { entity ->
+                if (app.repository.confirmAndMove(entity).isFailure) {
+                    failures++
+                }
             }
+            _uiState.value = _uiState.value.copy(
+                isConfirming = false,
+                userMessage = if (failures == 0) {
+                    "已全部添加到宝宝相册"
+                } else {
+                    "有 $failures 张照片添加失败，请稍后重试"
+                }
+            )
         }
     }
 
@@ -108,6 +153,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 rejectItem(entity)
             }
         }
+    }
+
+    fun dismissMovePermissionDialog() {
+        _uiState.value = _uiState.value.copy(showMovePermissionDialog = false)
+    }
+
+    fun clearUserMessage() {
+        _uiState.value = _uiState.value.copy(userMessage = null)
     }
 
     fun startManualWorkManagerScan() {
@@ -136,5 +189,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.value = _uiState.value.copy(pendingItems = items)
             }
         }
+    }
+
+    private fun ensureMovePermission(): Boolean {
+        val hasMovePermission = PhotoPermissionUtils.hasMovePermission(getApplication())
+        if (hasMovePermission) {
+            _uiState.value = _uiState.value.copy(hasMovePermission = true)
+            return true
+        }
+
+        _uiState.value = _uiState.value.copy(
+            hasMovePermission = false,
+            showMovePermissionDialog = true,
+            userMessage = "需要授予文件管理权限后才能移动照片"
+        )
+        return false
     }
 }

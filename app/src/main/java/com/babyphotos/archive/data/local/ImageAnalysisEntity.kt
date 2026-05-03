@@ -17,6 +17,9 @@ data class ImageAnalysisEntity(
     @ColumnInfo(name = "path")
     val path: String,
 
+    @ColumnInfo(name = "media_store_id")
+    val mediaStoreId: Long? = null,
+
     @ColumnInfo(name = "contains_baby")
     val containsBaby: Boolean,
 

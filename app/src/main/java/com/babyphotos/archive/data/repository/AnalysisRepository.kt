@@ -13,7 +13,6 @@ import com.babyphotos.archive.domain.preprocessor.ImagePreprocessor
 import com.babyphotos.archive.domain.recognizer.BabyRecognizer
 import com.babyphotos.archive.domain.scanner.PhotoScanner
 import com.babyphotos.archive.util.SettingsManager
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -44,9 +43,9 @@ class AnalysisRepository(
         }
         Log.d(TAG, "Scanned ${photos.size} photos for today")
 
-        // 2. Filter out already-analyzed photos
+        // 2. Filter out already-analyzed photos（含已移动到宝宝相册后路径变化的情况）
         val newPhotos = photos.filter { photo ->
-            dao.getByPath(photo.path) == null
+            dao.getByPathOrMovedTo(photo.path) == null
         }
         Log.d(TAG, "${newPhotos.size} new photos to analyze")
 
@@ -78,15 +77,18 @@ class AnalysisRepository(
 
         // 4. Auto-add high-confidence results
         val autoAdded = decisions.filter { it.action == ClassificationAction.AUTO_ADD }
+        var autoAddedCount = 0
+        val moveFailures = mutableListOf<ClassificationDecision>()
         autoAdded.forEach { decision ->
             try {
-                val moveResult = albumManager.moveToBabyAlbum(decision.photo)
-                val movedPath = moveResult.getOrNull()
+                val movedPath = albumManager.moveToBabyAlbum(decision.photo).getOrThrow()
                 dao.insert(decision.toEntity(movedPath))
+                autoAddedCount++
                 Log.d(TAG, "Auto-added: ${decision.photo.path} -> $movedPath")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to move ${decision.photo.path}", e)
-                dao.insert(decision.toEntity(null))
+                dao.insert(decision.toEntity(null, overrideAction = ClassificationAction.NEEDS_CONFIRM))
+                moveFailures += decision
             }
         }
 
@@ -100,25 +102,45 @@ class AnalysisRepository(
         needsConfirm.forEach { decision ->
             dao.insert(decision.toEntity(null))
         }
+        val confirmationItems = needsConfirm + moveFailures
 
         ScanSummary(
             totalScanned = photos.size,
             newlyAnalyzed = newPhotos.size,
-            autoAdded = autoAdded.size,
-            needsConfirmation = needsConfirm.size,
-            confirmationItems = needsConfirm
+            autoAdded = autoAddedCount,
+            needsConfirmation = confirmationItems.size,
+            confirmationItems = confirmationItems
         )
     }
 
-    suspend fun confirmAndMove(decision: ClassificationDecision) {
-        try {
-            val moveResult = albumManager.moveToBabyAlbum(decision.photo)
-            val movedPath = moveResult.getOrNull()
+    suspend fun confirmAndMove(decision: ClassificationDecision): Result<String> =
+        runCatching {
+            val movedPath = albumManager.moveToBabyAlbum(decision.photo).getOrThrow()
             dao.insert(decision.toEntity(movedPath, overrideAction = ClassificationAction.AUTO_ADD))
-        } catch (e: Exception) {
+            movedPath
+        }.onFailure { e ->
             Log.e(TAG, "Failed to confirm ${decision.photo.path}", e)
         }
-    }
+
+    suspend fun confirmAndMove(entity: ImageAnalysisEntity): Result<String> =
+        runCatching {
+            val sourcePath = entity.movedTo ?: entity.path
+            val movedPath = albumManager.moveToBabyAlbum(
+                path = sourcePath,
+                mediaStoreId = entity.mediaStoreId
+            ).getOrThrow()
+            dao.insert(
+                entity.copy(
+                    containsBaby = true,
+                    action = ClassificationAction.AUTO_ADD.name,
+                    movedTo = movedPath,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+            movedPath
+        }.onFailure { e ->
+            Log.e(TAG, "Failed to confirm ${entity.path}", e)
+        }
 
     suspend fun reject(decision: ClassificationDecision) {
         dao.insert(decision.toEntity(null, overrideAction = ClassificationAction.IGNORE))
@@ -137,6 +159,7 @@ private fun ClassificationDecision.toEntity(
     return ImageAnalysisEntity(
         id = hashPath(photo.path),
         path = photo.path,
+        mediaStoreId = photo.id,
         containsBaby = detectionResult.containsBaby,
         confidence = detectionResult.confidence,
         reason = detectionResult.reason,

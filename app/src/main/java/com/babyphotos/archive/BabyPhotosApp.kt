@@ -22,45 +22,42 @@ class BabyPhotosApp : Application() {
     lateinit var repository: AnalysisRepository
         private set
 
-    private lateinit var _recognizer: BabyRecognizer
     private lateinit var settingsManager: SettingsManager
 
     override fun onCreate() {
         super.onCreate()
 
         settingsManager = SettingsManager(this)
-        val scanner = MediaStorePhotoScanner(this)
-        val preprocessor = ImagePreprocessor()
-        val classifier = ClassificationEngine()
-        val albumManager = AlbumManager(this)
-
-        // Default recognizer with placeholder config (user must configure in Settings)
-        _recognizer = createRecognizer("", "", "gpt-4o-mini")
-        repository = AnalysisRepository(
-            context = this,
-            scanner = scanner,
-            preprocessor = preprocessor,
-            recognizer = _recognizer,
-            classifier = classifier,
-            albumManager = albumManager,
-            settingsManager = settingsManager
+        rebuildRepository(
+            apiBaseUrl = settingsManager.apiBaseUrl,
+            apiKey = settingsManager.apiKey,
+            modelName = settingsManager.modelName
         )
 
         scheduleDailyScan()
     }
 
     fun updateRecognizer(apiBaseUrl: String, apiKey: String, modelName: String) {
+        rebuildRepository(apiBaseUrl, apiKey, modelName)
+    }
+
+    private fun rebuildRepository(apiBaseUrl: String, apiKey: String, modelName: String) {
         val scanner = MediaStorePhotoScanner(this)
-        val preprocessor = ImagePreprocessor()
-        val classifier = ClassificationEngine()
+        val preprocessor = ImagePreprocessor(
+            maxSize = settingsManager.maxImageSize,
+            jpegQuality = settingsManager.jpegQuality
+        )
+        val classifier = ClassificationEngine(
+            autoAddThreshold = settingsManager.autoAddThreshold,
+            confirmThreshold = settingsManager.confirmThreshold
+        )
         val albumManager = AlbumManager(this)
 
-        _recognizer = createRecognizer(apiBaseUrl, apiKey, modelName)
         repository = AnalysisRepository(
             context = this,
             scanner = scanner,
             preprocessor = preprocessor,
-            recognizer = _recognizer,
+            recognizer = createRecognizer(apiBaseUrl, apiKey, modelName),
             classifier = classifier,
             albumManager = albumManager,
             settingsManager = settingsManager
