@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import com.babyphotos.archive.util.SettingsManager
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -139,6 +140,40 @@ fun SettingsScreen(
             ) {
                 Text(dateText)
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Recognition Prompts
+            Text("识别提示词", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "自定义 AI 识别图片/视频时使用的提示词。留空则使用默认值。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = uiState.systemPrompt,
+                onValueChange = viewModel::updateSystemPrompt,
+                label = { Text("System 提示词") },
+                placeholder = { Text(SettingsManager.DEFAULT_SYSTEM_PROMPT) },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 8
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = uiState.userPrompt,
+                onValueChange = viewModel::updateUserPrompt,
+                label = { Text("User 提示词") },
+                placeholder = { Text(SettingsManager.DEFAULT_USER_PROMPT) },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 

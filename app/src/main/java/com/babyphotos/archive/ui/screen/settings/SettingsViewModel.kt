@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.babyphotos.archive.BabyPhotosApp
 import com.babyphotos.archive.util.SettingsManager
+import com.babyphotos.archive.util.SettingsManager.Companion.DEFAULT_SYSTEM_PROMPT
+import com.babyphotos.archive.util.SettingsManager.Companion.DEFAULT_USER_PROMPT
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +20,8 @@ data class SettingsUiState(
     val jpegQuality: Int = 70,
     val concurrencyLimit: Int = 4,
     val scanStartDate: Long = 0L,
+    val systemPrompt: String = "",
+    val userPrompt: String = "",
     val isSaved: Boolean = false
 )
 
@@ -35,7 +39,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             maxImageSize = settingsManager.maxImageSize,
             jpegQuality = settingsManager.jpegQuality,
             concurrencyLimit = settingsManager.concurrencyLimit,
-            scanStartDate = settingsManager.scanStartDate
+            scanStartDate = settingsManager.scanStartDate,
+            systemPrompt = settingsManager.systemPrompt,
+            userPrompt = settingsManager.userPrompt
         )
     )
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -72,6 +78,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _uiState.value = _uiState.value.copy(scanStartDate = value, isSaved = false)
     }
 
+    fun updateSystemPrompt(value: String) {
+        _uiState.value = _uiState.value.copy(systemPrompt = value, isSaved = false)
+    }
+
+    fun updateUserPrompt(value: String) {
+        _uiState.value = _uiState.value.copy(userPrompt = value, isSaved = false)
+    }
+
     fun saveSettings() {
         val state = _uiState.value
         settingsManager.apiBaseUrl = state.apiBaseUrl.trimEnd('/')
@@ -83,13 +97,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         settingsManager.jpegQuality = state.jpegQuality
         settingsManager.concurrencyLimit = state.concurrencyLimit
         settingsManager.scanStartDate = state.scanStartDate
+        val effectiveSystemPrompt = state.systemPrompt.ifBlank { DEFAULT_SYSTEM_PROMPT }
+        val effectiveUserPrompt = state.userPrompt.ifBlank { DEFAULT_USER_PROMPT }
+        settingsManager.systemPrompt = effectiveSystemPrompt
+        settingsManager.userPrompt = effectiveUserPrompt
 
         // Update the recognizer in App
         val app = getApplication<BabyPhotosApp>()
         app.updateRecognizer(
             apiBaseUrl = state.apiBaseUrl.trimEnd('/'),
             apiKey = state.apiKey,
-            modelName = state.modelName
+            modelName = state.modelName,
+            systemPrompt = effectiveSystemPrompt,
+            userPrompt = effectiveUserPrompt
         )
 
         _uiState.value = _uiState.value.copy(isSaved = true)

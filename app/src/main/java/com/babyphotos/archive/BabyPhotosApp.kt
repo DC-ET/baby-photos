@@ -26,16 +26,18 @@ class BabyPhotosApp : Application() {
         rebuildRepository(
             apiBaseUrl = settingsManager.apiBaseUrl,
             apiKey = settingsManager.apiKey,
-            modelName = settingsManager.modelName
+            modelName = settingsManager.modelName,
+            systemPrompt = settingsManager.systemPrompt,
+            userPrompt = settingsManager.userPrompt
         )
         cancelExistingScheduledScan()
     }
 
-    fun updateRecognizer(apiBaseUrl: String, apiKey: String, modelName: String) {
-        rebuildRepository(apiBaseUrl, apiKey, modelName)
+    fun updateRecognizer(apiBaseUrl: String, apiKey: String, modelName: String, systemPrompt: String, userPrompt: String) {
+        rebuildRepository(apiBaseUrl, apiKey, modelName, systemPrompt, userPrompt)
     }
 
-    private fun rebuildRepository(apiBaseUrl: String, apiKey: String, modelName: String) {
+    private fun rebuildRepository(apiBaseUrl: String, apiKey: String, modelName: String, systemPrompt: String, userPrompt: String) {
         val scanner = MediaStorePhotoScanner(this)
         val preprocessor = ImagePreprocessor(
             maxSize = settingsManager.maxImageSize,
@@ -53,18 +55,20 @@ class BabyPhotosApp : Application() {
             scanner = scanner,
             preprocessor = preprocessor,
             videoFrameExtractor = videoFrameExtractor,
-            recognizer = createRecognizer(apiBaseUrl, apiKey, modelName),
+            recognizer = createRecognizer(apiBaseUrl, apiKey, modelName, systemPrompt, userPrompt),
             classifier = classifier,
             albumManager = albumManager,
             settingsManager = settingsManager
         )
     }
 
-    private fun createRecognizer(apiBaseUrl: String, apiKey: String, modelName: String): BabyRecognizer {
+    private fun createRecognizer(apiBaseUrl: String, apiKey: String, modelName: String, systemPrompt: String, userPrompt: String): BabyRecognizer {
         return BabyRecognizerImpl(
             apiBaseUrl = apiBaseUrl,
             apiKey = apiKey,
-            modelName = modelName
+            modelName = modelName,
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt
         )
     }
 

@@ -40,6 +40,14 @@ class SettingsManager(context: Context) {
         get() = prefs.getInt(KEY_CONCURRENCY, 4)
         set(value) = prefs.edit().putInt(KEY_CONCURRENCY, value).apply()
 
+    var systemPrompt: String
+        get() = prefs.getString(KEY_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT) ?: DEFAULT_SYSTEM_PROMPT
+        set(value) = prefs.edit().putString(KEY_SYSTEM_PROMPT, value).apply()
+
+    var userPrompt: String
+        get() = prefs.getString(KEY_USER_PROMPT, DEFAULT_USER_PROMPT) ?: DEFAULT_USER_PROMPT
+        set(value) = prefs.edit().putString(KEY_USER_PROMPT, value).apply()
+
     var scanStartDate: Long
         get() = prefs.getLong(KEY_SCAN_START_DATE, 0L)
         set(value) = prefs.edit().putLong(KEY_SCAN_START_DATE, value).apply()
@@ -81,5 +89,19 @@ class SettingsManager(context: Context) {
         private const val KEY_SCAN_START_DATE = "scan_start_date"
         private const val KEY_SCAN_START_SNAPSHOT_AT_LAST_SCAN = "scan_start_date_snapshot_at_last_scan"
         private const val KEY_LAST_SCAN_MEDIA_DATE_ADDED_WATERMARK = "last_scan_media_date_added_watermark"
+        private const val KEY_SYSTEM_PROMPT = "system_prompt"
+        private const val KEY_USER_PROMPT = "user_prompt"
+
+        const val DEFAULT_SYSTEM_PROMPT = """你是一个图片分类器。
+任务：判断图片中是否包含0-3岁婴幼儿。
+规则：
+1. 看到婴儿/幼儿 => true
+2. 背影/局部但明显为婴儿 => true
+3. 无法判断 => false
+4. 成人/儿童（>5岁） => false
+5. 玩具娃娃 => false
+输出 JSON：{"contains_baby": true/false, "confidence": 0-100, "reason": "一句话说明"}"""
+
+        const val DEFAULT_USER_PROMPT = "判断图片是否包含0-3岁婴幼儿，并返回JSON结果"
     }
 }

@@ -1,6 +1,7 @@
 package com.babyphotos.archive.domain.recognizer
 
 import com.babyphotos.archive.domain.model.BabyDetectionResult
+import com.babyphotos.archive.util.SettingsManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
@@ -16,25 +17,15 @@ import java.util.concurrent.TimeUnit
 class BabyRecognizerImpl(
     private val apiBaseUrl: String,
     private val apiKey: String,
-    private val modelName: String = "gpt-4o-mini"
+    private val modelName: String = "gpt-4o-mini",
+    private val systemPrompt: String = SettingsManager.DEFAULT_SYSTEM_PROMPT,
+    private val userPrompt: String = SettingsManager.DEFAULT_USER_PROMPT
 ) : BabyRecognizer {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
-
-    companion object {
-        const val SYSTEM_PROMPT = """你是一个图片分类器。
-任务：判断图片中是否包含0-3岁婴幼儿。
-规则：
-1. 看到婴儿/幼儿 => true
-2. 背影/局部但明显为婴儿 => true
-3. 无法判断 => false
-4. 成人/儿童（>5岁） => false
-5. 玩具娃娃 => false
-输出 JSON：{"contains_baby": true/false, "confidence": 0-100, "reason": "一句话说明"}"""
-    }
 
     override suspend fun recognize(base64Image: String): Result<BabyDetectionResult> =
         withContext(Dispatchers.IO) {
@@ -68,7 +59,7 @@ class BabyRecognizerImpl(
                 // System message
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", SYSTEM_PROMPT)
+                    put("content", systemPrompt)
                 })
                 // User message with image
                 put(JSONObject().apply {
@@ -76,7 +67,7 @@ class BabyRecognizerImpl(
                     put("content", JSONArray().apply {
                         put(JSONObject().apply {
                             put("type", "text")
-                            put("text", "判断图片是否包含0-3岁婴幼儿，并返回JSON结果")
+                            put("text", userPrompt)
                         })
                         put(JSONObject().apply {
                             put("type", "image_url")
