@@ -24,6 +24,7 @@ data class HistoryUiState(
     val filter: HistoryFilter = HistoryFilter.ALL,
     val movingItemIds: Set<String> = emptySet(),
     val showMovePermissionDialog: Boolean = false,
+    val isCleaningStale: Boolean = false,
     val userMessage: String? = null
 ) {
     val filteredItems: List<ImageAnalysisEntity>
@@ -112,6 +113,35 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                     onFailure = { "移除失败：${it.message ?: "无法移回照片或视频"}" }
                 )
             )
+        }
+    }
+
+    fun cleanStaleRecords() {
+        if (_uiState.value.isCleaningStale) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isCleaningStale = true, userMessage = null)
+
+            val currentItems = _uiState.value.allItems
+            val staleIds = withContext(Dispatchers.IO) {
+                currentItems.filter { entity ->
+                    val currentPath = entity.movedTo ?: entity.path
+                    !File(currentPath).exists()
+                }.map { it.id }
+            }
+
+            if (staleIds.isEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    isCleaningStale = false,
+                    userMessage = "没有发现已失效的记录"
+                )
+            } else {
+                dao.deleteByIds(staleIds)
+                _uiState.value = _uiState.value.copy(
+                    isCleaningStale = false,
+                    userMessage = "已清理 ${staleIds.size} 条无效记录"
+                )
+            }
         }
     }
 

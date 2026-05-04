@@ -39,4 +39,7 @@ interface ImageAnalysisDao {
 
     @Query("DELETE FROM image_analysis WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM image_analysis WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
 }

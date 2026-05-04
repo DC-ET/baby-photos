@@ -13,7 +13,18 @@
       "Bash(JAVA_HOME=/Users/yangjiayi/Library/Java/JavaVirtualMachines/graalvm-jdk-17.0.11/Contents/Home which sdkmanager)",
       "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home ANDROID_HOME=/Users/yangjiayi/Library/Android/sdk ./gradlew assembleDebug)",
       "Bash(JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home ANDROID_HOME=/Users/yangjiayi/Library/Android/sdk /Users/yangjiayi/AiProjects/baby-photos/gradlew -p /Users/yangjiayi/AiProjects/baby-photos assembleDebug)",
-      "Bash(./gradlew assembleDebug)"
+      "Bash(./gradlew assembleDebug)",
+      "Bash(./gradlew :app:compileDebugKotlin)",
+      "Bash(xxd)",
+      "Bash(python3 -c ' *)",
+      "Bash(claude --version)",
+      "Bash(npm list *)",
+      "Bash(brew list *)",
+      "Read(//Users/yangjiayi/.claude/bin/**)",
+      "Bash(npm install *)",
+      "Bash(npm bin *)",
+      "Read(//Applications/Codex.app/Contents/bin/**)",
+      "Bash(/Applications/Codex.app/Contents/bin/claude --version)"
     ]
   }
 }
