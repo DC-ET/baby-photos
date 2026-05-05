@@ -7,6 +7,7 @@ import com.babyphotos.archive.BabyPhotosApp
 import com.babyphotos.archive.data.local.AppDatabase
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
 import com.babyphotos.archive.domain.model.ClassificationAction
+import com.babyphotos.archive.domain.model.ScanProgress
 import com.babyphotos.archive.domain.model.ScanSummary
 import com.babyphotos.archive.util.PhotoPermissionUtils
 import com.babyphotos.archive.util.SettingsManager
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 data class HomeUiState(
     val lastScanSummary: ScanSummary? = null,
     val isScanning: Boolean = false,
+    val scanProgress: ScanProgress? = null,
     val isConfirming: Boolean = false,
     val isApiConfigured: Boolean = false,
     val hasPhotoPermission: Boolean = false,
@@ -99,17 +101,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.isScanning) return
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isScanning = true)
+            _uiState.value = _uiState.value.copy(isScanning = true, scanProgress = null)
             try {
                 val app = getApplication<BabyPhotosApp>()
-                val summary = app.repository.runDailyScan()
+                val summary = app.repository.runDailyScan { progress ->
+                    _uiState.value = _uiState.value.copy(scanProgress = progress)
+                }
                 _uiState.value = _uiState.value.copy(
                     lastScanSummary = summary,
-                    isScanning = false
+                    isScanning = false,
+                    scanProgress = null
                 )
                 loadBabyPhotoCount()
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isScanning = false)
+                _uiState.value = _uiState.value.copy(isScanning = false, scanProgress = null)
             }
         }
     }

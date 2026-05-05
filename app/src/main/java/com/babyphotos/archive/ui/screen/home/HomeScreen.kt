@@ -28,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,6 +55,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.babyphotos.archive.data.local.ImageAnalysisEntity
 import com.babyphotos.archive.domain.model.MediaType
+import com.babyphotos.archive.domain.model.ScanPhase
 import com.babyphotos.archive.ui.component.AnalysisMediaThumbnail
 import com.babyphotos.archive.ui.component.ConfidenceBadge
 import com.babyphotos.archive.util.PhotoPermissionUtils
@@ -195,9 +197,27 @@ fun HomeScreen(
 
         // Scan button / progress
         if (uiState.isScanning) {
-            CircularProgressIndicator()
-            Spacer(modifier = Modifier.height(8.dp))
-            Text("正在扫描照片和视频...", style = MaterialTheme.typography.bodyMedium)
+            val progress = uiState.scanProgress
+            if (progress != null && progress.total > 0) {
+                LinearProgressIndicator(
+                    progress = { progress.fraction },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                val phaseText = when (progress.phase) {
+                    ScanPhase.SCANNING_MEDIA -> "正在扫描相册..."
+                    ScanPhase.ANALYZING -> "正在识别照片..."
+                    ScanPhase.CLASSIFYING -> "正在分类归档..."
+                }
+                Text(
+                    "$phaseText ${progress.current}/${progress.total} (${progress.percent}%)",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("正在扫描照片和视频...", style = MaterialTheme.typography.bodyMedium)
+            }
         } else {
             Button(
                 onClick = {

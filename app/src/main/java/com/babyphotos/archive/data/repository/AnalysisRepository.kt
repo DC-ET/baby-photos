@@ -10,6 +10,8 @@ import com.babyphotos.archive.domain.classifier.ClassificationEngine
 import com.babyphotos.archive.domain.model.BabyDetectionResult
 import com.babyphotos.archive.domain.model.ClassificationDecision
 import com.babyphotos.archive.domain.model.MediaType
+import com.babyphotos.archive.domain.model.ScanPhase
+import com.babyphotos.archive.domain.model.ScanProgress
 import com.babyphotos.archive.domain.model.ScanSummary
 import com.babyphotos.archive.domain.model.ScannedPhoto
 import com.babyphotos.archive.domain.preprocessor.ImagePreprocessor
@@ -45,10 +47,12 @@ class AnalysisRepository(
     private val settingsManager: SettingsManager
 ) {
     private val dao by lazy { AppDatabase.getInstance(context).imageAnalysisDao() }
-    private val semaphore = Semaphore(4)
-
-    suspend fun runDailyScan(): ScanSummary = coroutineScope {
+    suspend fun runDailyScan(
+        onProgress: ((ScanProgress) -> Unit)? = null
+    ): ScanSummary = coroutineScope {
+        val semaphore = Semaphore(settingsManager.concurrencyLimit)
         // 1. Scan media from scanStartDate or today（已配置起始日时支持按上次水位增量查询）
+        onProgress?.invoke(ScanProgress(ScanPhase.SCANNING_MEDIA, 0, 0))
         val scanStartDate = settingsManager.scanStartDate
         val useConfiguredStart = scanStartDate > 0L
         val effectiveLower = if (useConfiguredStart) {
@@ -88,13 +92,19 @@ class AnalysisRepository(
         }
 
         // 3. Process each media item with concurrency control
+        onProgress?.invoke(ScanProgress(ScanPhase.ANALYZING, 0, newMediaItems.size))
+        val completedCount = java.util.concurrent.atomic.AtomicInteger(0)
         val decisions = newMediaItems.map { media ->
             async(Dispatchers.IO) {
                 semaphore.withPermit {
                     try {
-                        analyzeMedia(media)
+                        val result = analyzeMedia(media)
+                        val done = completedCount.incrementAndGet()
+                        onProgress?.invoke(ScanProgress(ScanPhase.ANALYZING, done, newMediaItems.size))
+                        result
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to analyze ${media.path}", e)
+                        completedCount.incrementAndGet()
                         null
                     }
                 }
@@ -103,8 +113,10 @@ class AnalysisRepository(
 
         // 4. Auto-add high-confidence results
         val autoAdded = decisions.filter { it.action == ClassificationAction.AUTO_ADD }
+        onProgress?.invoke(ScanProgress(ScanPhase.CLASSIFYING, 0, decisions.size))
         var autoAddedCount = 0
         val moveFailures = mutableListOf<ClassificationDecision>()
+        var classifyProgress = 0
         autoAdded.forEach { decision ->
             try {
                 val movedPath = albumManager.moveToBabyAlbum(decision.photo).getOrThrow()
@@ -116,17 +128,23 @@ class AnalysisRepository(
                 dao.insert(decision.toEntity(null, overrideAction = ClassificationAction.NEEDS_CONFIRM))
                 moveFailures += decision
             }
+            classifyProgress++
+            onProgress?.invoke(ScanProgress(ScanPhase.CLASSIFYING, classifyProgress, decisions.size))
         }
 
         // 5. Save ignored results
         decisions.filter { it.action == ClassificationAction.IGNORE }.forEach { decision ->
             dao.insert(decision.toEntity(null))
+            classifyProgress++
+            onProgress?.invoke(ScanProgress(ScanPhase.CLASSIFYING, classifyProgress, decisions.size))
         }
 
         // 6. Save needs-confirm items (don't move yet)
         val needsConfirm = decisions.filter { it.action == ClassificationAction.NEEDS_CONFIRM }
         needsConfirm.forEach { decision ->
             dao.insert(decision.toEntity(null))
+            classifyProgress++
+            onProgress?.invoke(ScanProgress(ScanPhase.CLASSIFYING, classifyProgress, decisions.size))
         }
         val confirmationItems = needsConfirm + moveFailures
 

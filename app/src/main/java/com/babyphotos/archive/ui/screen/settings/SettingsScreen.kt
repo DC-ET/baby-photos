@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import com.babyphotos.archive.util.SettingsManager
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -93,6 +95,43 @@ fun SettingsScreen(
                 singleLine = true
             )
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Test API Connection
+            Button(
+                onClick = viewModel::testApiConnection,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !uiState.isTestingApi
+            ) {
+                if (uiState.isTestingApi) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .height(18.dp)
+                            .align(Alignment.CenterVertically),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("测试中...")
+                } else {
+                    Text("测试 API 连接")
+                }
+            }
+
+            uiState.apiTestResult?.let { result ->
+                Spacer(modifier = Modifier.height(8.dp))
+                val (text, color) = when (result) {
+                    is ApiTestResult.Success -> "连接成功，API 可正常使用" to MaterialTheme.colorScheme.primary
+                    is ApiTestResult.Failure -> result.message to MaterialTheme.colorScheme.error
+                }
+                Text(
+                    text = text,
+                    color = color,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // Scan Settings
@@ -104,6 +143,14 @@ fun SettingsScreen(
                 value = uiState.autoAddThreshold.toFloat(),
                 onValueChange = { viewModel.updateAutoAddThreshold(it.toInt()) },
                 valueRange = 50f..100f,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Text("并发数: ${uiState.concurrencyLimit}")
+            Slider(
+                value = uiState.concurrencyLimit.toFloat(),
+                onValueChange = { viewModel.updateConcurrencyLimit(it.toInt()) },
+                valueRange = 1f..50f,
                 modifier = Modifier.fillMaxWidth()
             )
 

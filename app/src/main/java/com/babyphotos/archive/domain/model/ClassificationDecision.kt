@@ -25,3 +25,18 @@ data class PreprocessedImage(
     val base64Data: String,
     val compressedSize: Int
 )
+
+enum class ScanPhase {
+    SCANNING_MEDIA,
+    ANALYZING,
+    CLASSIFYING
+}
+
+data class ScanProgress(
+    val phase: ScanPhase,
+    val current: Int,
+    val total: Int
+) {
+    val fraction: Float get() = if (total > 0) current.toFloat() / total else 0f
+    val percent: Int get() = (fraction * 100).toInt()
+}

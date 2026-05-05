@@ -9,7 +9,7 @@ class SettingsManager(context: Context) {
         context.getSharedPreferences("baby_photos_settings", Context.MODE_PRIVATE)
 
     var apiBaseUrl: String
-        get() = prefs.getString(KEY_API_BASE_URL, "") ?: ""
+        get() = prefs.getString(KEY_API_BASE_URL, "https://dashscope.aliyuncs.com/compatible-mode") ?: "https://dashscope.aliyuncs.com/compatible-mode"
         set(value) = prefs.edit().putString(KEY_API_BASE_URL, value).apply()
 
     var apiKey: String
@@ -17,7 +17,7 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit().putString(KEY_API_KEY, value).apply()
 
     var modelName: String
-        get() = prefs.getString(KEY_MODEL_NAME, "gpt-4o-mini") ?: "gpt-4o-mini"
+        get() = prefs.getString(KEY_MODEL_NAME, "qwen3-vl-flash") ?: "qwen3-vl-flash"
         set(value) = prefs.edit().putString(KEY_MODEL_NAME, value).apply()
 
     var autoAddThreshold: Int
@@ -37,7 +37,7 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit().putInt(KEY_JPEG_QUALITY, value).apply()
 
     var concurrencyLimit: Int
-        get() = prefs.getInt(KEY_CONCURRENCY, 4)
+        get() = prefs.getInt(KEY_CONCURRENCY, 10)
         set(value) = prefs.edit().putInt(KEY_CONCURRENCY, value).apply()
 
     var systemPrompt: String
