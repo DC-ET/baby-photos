@@ -3,6 +3,7 @@ package com.babyphotos.archive.ui.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -20,6 +21,7 @@ import androidx.navigation.compose.rememberNavController
 
 sealed class Screen(val route: String) {
     data object Home : Screen("home")
+    data object Album : Screen("album")
     data object History : Screen("history")
     data object Settings : Screen("settings")
 }
@@ -32,6 +34,7 @@ data class BottomNavItem(
 
 val bottomNavItems = listOf(
     BottomNavItem(Screen.Home, "首页", Icons.Default.Home),
+    BottomNavItem(Screen.Album, "相册", Icons.Default.PhotoLibrary),
     BottomNavItem(Screen.History, "记录", Icons.Default.History),
     BottomNavItem(Screen.Settings, "设置", Icons.Default.Settings),
 )
@@ -82,6 +85,9 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                 com.babyphotos.archive.ui.screen.home.HomeScreen(
                     paddingValues = innerPadding
                 )
+            }
+            composable(Screen.Album.route) {
+                com.babyphotos.archive.ui.screen.album.AlbumScreen(paddingValues = innerPadding)
             }
             composable(Screen.History.route) {
                 com.babyphotos.archive.ui.screen.history.HistoryScreen(paddingValues = innerPadding)

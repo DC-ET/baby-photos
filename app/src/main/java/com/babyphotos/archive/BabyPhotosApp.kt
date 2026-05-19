@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.work.WorkManager
 import com.babyphotos.archive.data.repository.AnalysisRepository
 import com.babyphotos.archive.domain.album.AlbumManager
+import com.babyphotos.archive.domain.album.BabyAlbumReader
 import com.babyphotos.archive.domain.classifier.ClassificationEngine
 import com.babyphotos.archive.domain.preprocessor.ImagePreprocessor
 import com.babyphotos.archive.domain.preprocessor.VideoFrameExtractor
@@ -17,12 +18,16 @@ class BabyPhotosApp : Application() {
     lateinit var repository: AnalysisRepository
         private set
 
+    lateinit var babyAlbumReader: BabyAlbumReader
+        private set
+
     private lateinit var settingsManager: SettingsManager
 
     override fun onCreate() {
         super.onCreate()
 
         settingsManager = SettingsManager(this)
+        babyAlbumReader = BabyAlbumReader(this)
         rebuildRepository(
             apiBaseUrl = settingsManager.apiBaseUrl,
             apiKey = settingsManager.apiKey,
